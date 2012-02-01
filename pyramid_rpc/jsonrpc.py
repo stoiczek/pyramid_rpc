@@ -1,7 +1,7 @@
 import logging
 
 import venusian
-from pyramid.compat import json
+from pyramid.compat import json, text_
 from pyramid.exceptions import ConfigurationError
 from pyramid.httpexceptions import HTTPForbidden
 from pyramid.httpexceptions import HTTPNotFound
@@ -55,13 +55,13 @@ class JsonRpcInternalError(JsonRpcError):
     message = 'internal error'
 
 
-def jsonrpc_error_response(error, id=None):
+def jsonrpc_error_response(encoder, error, id=None):
     """ Marshal a Python Exception into a webob ``Response``
     object with a body that is a JSON string suitable for use as
     a JSON-RPC response with a content-type of ``application/json``
     and return the response."""
 
-    body = json.dumps({
+    body = encoder({
         'jsonrpc': '2.0',
         'id': id,
         'error': error.as_dict(),
@@ -92,7 +92,7 @@ def exception_view(exc, request):
         fault = JsonRpcInternalError()
         log.exception('json-rpc exception rpc_id:%s "%s"', rpc_id, exc)
 
-    return jsonrpc_error_response(fault, rpc_id)
+    return jsonrpc_error_response(request.jsonrpc_encoder, fault, rpc_id)
 
 
 def jsonrpc_renderer(info):
@@ -116,13 +116,13 @@ def jsonrpc_renderer(info):
                 'id': rpc_id,
                 'result': value,
             }
-            return json.dumps(out)
+            return request.jsonrpc_encoder(out)
     return _render
 
 
-def setup_jsonrpc(request):
+def setup_jsonrpc(request,encoder,decoder):
     try:
-        body = request.json_body
+        body = decoder(request.body, request.charset)
     except ValueError:
         raise JsonRpcParseError
 
@@ -130,13 +130,17 @@ def setup_jsonrpc(request):
     request.rpc_args = body.get('params', ())
     request.rpc_method = body.get('method')
     request.rpc_version = body.get('jsonrpc')
-
     if request.rpc_version != '2.0':
         raise JsonRpcRequestInvalid
 
     if request.rpc_method is None:
         raise JsonRpcRequestInvalid
 
+def default_decoder(req_body, charset):
+    return json.loads(text_(req_body, charset))
+
+def default_encoder(data):
+    return json.dumps(data)
 
 def add_jsonrpc_endpoint(self, name, *args, **kw):
     """Add an endpoint for handling JSON-RPC.
@@ -145,22 +149,53 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
 
         The name of the endpoint.
 
+    Additionally it supports setting custom json encoder or decuder via kw
+    properties:
+
+    encoder
+
+        Encoder to be used when serializing data to json. It should be callable
+        that takes single parameter - object to be encoded. It should return a
+        string with JSON-encoded input object
+
+    decoder
+
+        Decoder to be used when deserializing JSON-encoded data into python
+        objects. It should be a callable that takes 2 parameters: input string
+        and charset.
+
     A JSON-RPC method also accepts all of the arguments supplied to
     Pyramid's ``add_route`` method.
 
     """
+    if 'encoder' in kw:
+        encoder = kw['encoder']
+        del kw['encoder']
+    else:
+        encoder = default_encoder
+    if 'decoder' in kw:
+        decoder = kw['decoder']
+        del kw['decoder']
+    else:
+        decoder = default_decoder
+
+    def setup_encoder_predicate(info, request):
+        request.jsonrpc_encoder = encoder
+        return True
+
     def jsonrpc_endpoint_predicate(info, request):
         # potentially setup either rpc v1 or v2 from the parsed body
-        setup_jsonrpc(request)
+        setup_jsonrpc(request, encoder, decoder)
 
         # Always return True so that even if it isn't a valid RPC it
         # will fall through to the notfound_view which will still
         # return a valid JSON-RPC response.
         return True
     predicates = kw.setdefault('custom_predicates', [])
+    predicates.append(setup_encoder_predicate)
     predicates.append(jsonrpc_endpoint_predicate)
     self.add_route(name, *args, **kw)
-    self.add_view(exception_view, route_name=name, context=Exception)
+    self.add_view(exception_view, route_name=name, context=Exception, custom_predicates=[setup_encoder_predicate])
 
 
 def add_jsonrpc_method(self, view, **kw):

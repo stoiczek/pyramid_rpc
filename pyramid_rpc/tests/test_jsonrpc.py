@@ -264,6 +264,33 @@ class TestJSONRPCIntegration(unittest.TestCase):
         result = self._callFUT(app, 'dummy', [2, 3, 4])
         self.assertEqual(result['error']['code'], -32602)
 
+    def test_it_with_custom_encoder_decoder(self):
+        config = self.config
+        config.include('pyramid_rpc.jsonrpc')
+        self.encoder_called = False
+        self.decoder_called = False
+        def test_encoder(data):
+
+            self.encoder_called = True
+            return json.dumps(data)
+
+        def test_decoder(str, charset):
+            self.decoder_called = True
+            return json.loads(str, charset)
+
+        config.add_jsonrpc_endpoint('rpc', '/api/jsonrpc',encoder=test_encoder,
+                                    decoder=test_decoder)
+
+        config.add_jsonrpc_method(lambda r, a, b: a,
+                                  endpoint='rpc', method='dummy')
+        app = config.make_wsgi_app()
+        app = TestApp(app)
+        result = self._callFUT(app, 'dummy', [2, 3])
+        self.assertEqual(result['result'], 2)
+        self.assertTrue(self.encoder_called)
+        self.assertTrue(self.decoder_called)
+
+
 class DummyAuthenticationPolicy(object):
     userid = None
     groups = ()
