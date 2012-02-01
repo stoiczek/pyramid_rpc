@@ -195,7 +195,8 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
     predicates.append(setup_encoder_predicate)
     predicates.append(jsonrpc_endpoint_predicate)
     self.add_route(name, *args, **kw)
-    self.add_view(exception_view, route_name=name, context=Exception, custom_predicates=[setup_encoder_predicate])
+    self.add_view(exception_view, route_name=name, context=Exception,
+                  custom_predicates=[setup_encoder_predicate])
 
 
 def add_jsonrpc_method(self, view, **kw):
