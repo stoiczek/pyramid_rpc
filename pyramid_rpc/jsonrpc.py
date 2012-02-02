@@ -65,7 +65,7 @@ def jsonrpc_error_response(encoder, error, id=None):
         'jsonrpc': '2.0',
         'id': id,
         'error': error.as_dict(),
-    })
+        })
 
     response = Response(body)
     response.content_type = 'application/json'
@@ -75,6 +75,9 @@ def jsonrpc_error_response(encoder, error, id=None):
 
 def exception_view(exc, request):
     rpc_id = getattr(request, 'rpc_id', None)
+
+    exc = request.jsonrpc_exc_translator(exc, request)
+
     if isinstance(exc, JsonRpcError):
         fault = exc
     elif isinstance(exc, HTTPNotFound):
@@ -115,12 +118,13 @@ def jsonrpc_renderer(info):
                 'jsonrpc': '2.0',
                 'id': rpc_id,
                 'result': value,
-            }
+                }
             return request.jsonrpc_encoder(out)
+
     return _render
 
 
-def setup_jsonrpc(request,encoder,decoder):
+def setup_jsonrpc(request, encoder, decoder):
     try:
         body = decoder(request.body, request.charset)
     except ValueError:
@@ -136,11 +140,14 @@ def setup_jsonrpc(request,encoder,decoder):
     if request.rpc_method is None:
         raise JsonRpcRequestInvalid
 
+
 def default_decoder(req_body, charset):
     return json.loads(text_(req_body, charset))
 
+
 def default_encoder(data):
     return json.dumps(data)
+
 
 def add_jsonrpc_endpoint(self, name, *args, **kw):
     """Add an endpoint for handling JSON-RPC.
@@ -179,8 +186,15 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
     else:
         decoder = default_decoder
 
+    exc_translator = lambda exc, req: exc
+    if 'exception_translator' in kw:
+        exc_translator = kw['exception_translator']
+        del kw['exception_translator']
+
+
     def setup_encoder_predicate(info, request):
         request.jsonrpc_encoder = encoder
+        request.jsonrpc_exc_translator = exc_translator
         return True
 
     def jsonrpc_endpoint_predicate(info, request):
@@ -191,9 +205,12 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
         # will fall through to the notfound_view which will still
         # return a valid JSON-RPC response.
         return True
+
     predicates = kw.setdefault('custom_predicates', [])
     predicates.append(setup_encoder_predicate)
     predicates.append(jsonrpc_endpoint_predicate)
+
+
     self.add_route(name, *args, **kw)
     self.add_view(exception_view, route_name=name, context=Exception,
                   custom_predicates=[setup_encoder_predicate])
@@ -233,6 +250,7 @@ def add_jsonrpc_method(self, view, **kw):
 
     def jsonrpc_method_predicate(context, request):
         return getattr(request, 'rpc_method', None) == method
+
     predicates = kw.setdefault('custom_predicates', [])
     predicates.append(jsonrpc_method_predicate)
     kw.setdefault('mapper', MapplyViewMapper)
@@ -252,6 +270,7 @@ class jsonrpc_method(object):
     the same arguments.
 
     """
+
     def __init__(self, method=None, **kw):
         self.method = method
         self.kw = kw

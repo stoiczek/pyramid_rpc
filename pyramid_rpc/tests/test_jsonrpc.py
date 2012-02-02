@@ -2,6 +2,7 @@ import unittest
 
 from pyramid import testing
 from pyramid.compat import json
+from pyramid.request import Request
 
 from webtest import TestApp
 
@@ -290,6 +291,24 @@ class TestJSONRPCIntegration(unittest.TestCase):
         self.assertTrue(self.encoder_called)
         self.assertTrue(self.decoder_called)
 
+    def test_with_exception_translator(self):
+        config = self.config
+        config.include('pyramid_rpc.jsonrpc')
+        self.translator_called = False
+        def exc_translator(exc, req):
+            self.translator_called = True
+            self.assertTrue(isinstance(req, Request))
+            self.assertTrue(isinstance(exc, Exception))
+            return exc
+        config.add_jsonrpc_endpoint('rpc', '/api/jsonrpc',
+                                    exception_translator=exc_translator)
+        config.add_jsonrpc_method(lambda r, a, b: a,
+                                  endpoint='rpc', method='dummy')
+        app = config.make_wsgi_app()
+        app = TestApp(app)
+        result = self._callFUT(app, 'dummy', [2])
+        self.assertEqual(result['error']['code'], -32602)
+        self.assertTrue(self.translator_called)
 
 class DummyAuthenticationPolicy(object):
     userid = None
