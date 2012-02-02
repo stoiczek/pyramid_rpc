@@ -156,8 +156,7 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
 
         The name of the endpoint.
 
-    Additionally it supports setting custom json encoder or decuder via kw
-    properties:
+    Additionally it supports following named parameters:
 
     encoder
 
@@ -170,6 +169,16 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
         Decoder to be used when deserializing JSON-encoded data into python
         objects. It should be a callable that takes 2 parameters: input string
         and charset.
+
+    exception_translator
+
+        Callable that gets called before any standard error handling occurs.
+        It should have following signature:
+
+            def exc_translator(exception, request)
+
+        It allows user to define more generic but custom error handlers to e.g.
+        maintain custom error codes or messages
 
     A JSON-RPC method also accepts all of the arguments supplied to
     Pyramid's ``add_route`` method.
