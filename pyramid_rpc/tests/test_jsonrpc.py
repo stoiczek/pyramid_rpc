@@ -270,12 +270,12 @@ class TestJSONRPCIntegration(unittest.TestCase):
         config.include('pyramid_rpc.jsonrpc')
         self.encoder_called = False
         self.decoder_called = False
-        def test_encoder(data):
+        def test_encoder(request, data):
 
             self.encoder_called = True
             return json.dumps(data)
 
-        def test_decoder(str, charset):
+        def test_decoder(request, str, charset):
             self.decoder_called = True
             return json.loads(str, charset)
 

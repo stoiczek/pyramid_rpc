@@ -55,13 +55,13 @@ class JsonRpcInternalError(JsonRpcError):
     message = 'internal error'
 
 
-def jsonrpc_error_response(encoder, error, id=None):
+def jsonrpc_error_response(request, encoder, error, id=None):
     """ Marshal a Python Exception into a webob ``Response``
     object with a body that is a JSON string suitable for use as
     a JSON-RPC response with a content-type of ``application/json``
     and return the response."""
 
-    body = encoder({
+    body = encoder(request, {
         'jsonrpc': '2.0',
         'id': id,
         'error': error.as_dict(),
@@ -95,7 +95,8 @@ def exception_view(exc, request):
         fault = JsonRpcInternalError()
         log.exception('json-rpc exception rpc_id:%s "%s"', rpc_id, exc)
 
-    return jsonrpc_error_response(request.jsonrpc_encoder, fault, rpc_id)
+    return jsonrpc_error_response(request, request.jsonrpc_encoder, fault,
+                                  rpc_id)
 
 
 def jsonrpc_renderer(info):
@@ -119,14 +120,14 @@ def jsonrpc_renderer(info):
                 'id': rpc_id,
                 'result': value,
                 }
-            return request.jsonrpc_encoder(out)
+            return request.jsonrpc_encoder(request, out)
 
     return _render
 
 
 def setup_jsonrpc(request, encoder, decoder):
     try:
-        body = decoder(request.body, request.charset)
+        body = decoder(request, request.body, request.charset)
     except ValueError:
         raise JsonRpcParseError
 
@@ -141,11 +142,11 @@ def setup_jsonrpc(request, encoder, decoder):
         raise JsonRpcRequestInvalid
 
 
-def default_decoder(req_body, charset):
-    return json.loads(text_(req_body, charset))
+def default_decoder(request, body, charset):
+    return json.loads(text_(body, charset))
 
 
-def default_encoder(data):
+def default_encoder(request, data):
     return json.dumps(data)
 
 
@@ -218,7 +219,6 @@ def add_jsonrpc_endpoint(self, name, *args, **kw):
     predicates = kw.setdefault('custom_predicates', [])
     predicates.append(setup_encoder_predicate)
     predicates.append(jsonrpc_endpoint_predicate)
-
 
     self.add_route(name, *args, **kw)
     self.add_view(exception_view, route_name=name, context=Exception,
